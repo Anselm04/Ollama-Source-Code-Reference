@@ -1,44 +1,39 @@
-name: Import pinned Ollama reference
-on: [push]
+name: Verify Ollama reference inventory
+on:
+  push:
+    paths: ['.github/workflows/import-reference.yml']
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
-  import:
-    if: github.actor != 'github-actions[bot]'
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Archive upstream without executing upstream code
-        shell: bash
+      - name: Compare complete tracked file inventory and hashes
         run: |
           set -euo pipefail
           tmp=$(mktemp -d)
-          git clone --depth 1 https://github.com/ollama/ollama.git "$tmp/source"
-          rev=$(git -C "$tmp/source" rev-parse HEAD)
-          tree=$(git -C "$tmp/source" rev-parse HEAD^{tree})
-          test -f "$tmp/source/LICENSE"
-          git -C "$tmp/source" archive "$rev" | tar -x -C "$tmp"
-          rm -rf "$tmp/.github/workflows"
-          git -C "$tmp/source" ls-files -z | while IFS= read -r -d '' f; do
-            case "$f" in .github/workflows/*) continue;; esac
-            if [[ -f "$tmp/$f" || -L "$tmp/$f" ]]; then
-              mkdir -p "$(dirname "$f")"
-              cp -a "$tmp/$f" "$f"
-            fi
-          done
-          mkdir -p .trillionai
-          printf 'Upstream: https://github.com/ollama/ollama\nRevision: %s\nOriginal tree: %s\nExcluded: upstream GitHub workflows; external submodule contents and LFS payloads not fetched.\n' "$rev" "$tree" > .trillionai/SOURCE_PROVENANCE.txt
-          git add -A
-          git -C "$tmp/source" ls-files -z | while IFS= read -r -d '' f; do
-            case "$f" in .github/workflows/*) continue;; esac
-            if [[ -f "$tmp/$f" || -L "$tmp/$f" ]]; then
-              expected=$(git -C "$tmp/source" rev-parse "HEAD:$f")
-              actual=$(git rev-parse ":$f")
-              test "$expected" = "$actual"
-            fi
-          done
-          git config user.name "TrillionAI Reference Import"
+          git clone --no-checkout --filter=blob:none https://github.com/ollama/ollama.git "$tmp/upstream"
+          git -C "$tmp/upstream" fetch origin 42ac2c0c1e132c0b4f0d9cfcd4e7950f0c5470bc
+          python3 - "$tmp/upstream" <<'PY'
+          import subprocess,sys,json
+          def tree(repo,rev):
+              raw=subprocess.check_output(['git','-C',repo,'ls-tree','-rz',rev])
+              return {p.decode('utf-8','surrogateescape'):m.decode().split() for m,p in (x.split(b'\t',1) for x in raw.split(b'\0') if x)}
+          upstream=tree(sys.argv[1],'42ac2c0c1e132c0b4f0d9cfcd4e7950f0c5470bc')
+          imported=tree('.','cc9c23d49a7e1b98b42098c50fd7f133963976a8')
+          excluded={p for p,m in upstream.items() if p.startswith('.github/workflows/') or m[1]=='commit'}
+          expected=set(upstream)-excluded
+          missing=sorted(expected-set(imported))
+          mismatched=sorted(p for p in expected & set(imported) if upstream[p]!=imported[p])
+          result=dict(upstream_tracked_entries=len(upstream),upstream_blob_files=sum(m[1]=='blob' for m in upstream.values()),imported_tracked_entries=len(imported),expected_source_files=len(expected),verified_source_files=len(expected)-len(missing)-len(mismatched),excluded_paths=sorted(excluded),missing_paths=missing,mismatched_paths=mismatched,extra_paths=sorted(set(imported)-expected))
+          print(json.dumps(result,indent=2))
+          open('.trillionai/FILE_INVENTORY.json','w').write(json.dumps(result,indent=2)+'\n')
+          PY
+          git config user.name "TrillionAI Reference Verification"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Import verified Ollama source snapshot $rev"
+          git add .trillionai/FILE_INVENTORY.json
+          git commit -m "Record exact Ollama source inventory"
           git push origin HEAD:main
+          python3 -c 'import json; d=json.load(open(".trillionai/FILE_INVENTORY.json")); assert not d["missing_paths"] and not d["mismatched_paths"]'
