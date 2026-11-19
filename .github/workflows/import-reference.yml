@@ -1,0 +1,44 @@
+name: Import pinned Ollama reference
+on: [push]
+permissions:
+  contents: write
+jobs:
+  import:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive upstream without executing upstream code
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          git clone --depth 1 https://github.com/ollama/ollama.git "$tmp/source"
+          rev=$(git -C "$tmp/source" rev-parse HEAD)
+          tree=$(git -C "$tmp/source" rev-parse HEAD^{tree})
+          test -f "$tmp/source/LICENSE"
+          git -C "$tmp/source" archive "$rev" | tar -x -C "$tmp"
+          rm -rf "$tmp/.github/workflows"
+          git -C "$tmp/source" ls-files -z | while IFS= read -r -d '' f; do
+            case "$f" in .github/workflows/*) continue;; esac
+            if [[ -f "$tmp/$f" || -L "$tmp/$f" ]]; then
+              mkdir -p "$(dirname "$f")"
+              cp -a "$tmp/$f" "$f"
+            fi
+          done
+          mkdir -p .trillionai
+          printf 'Upstream: https://github.com/ollama/ollama\nRevision: %s\nOriginal tree: %s\nExcluded: upstream GitHub workflows; external submodule contents and LFS payloads not fetched.\n' "$rev" "$tree" > .trillionai/SOURCE_PROVENANCE.txt
+          git add -A
+          git -C "$tmp/source" ls-files -z | while IFS= read -r -d '' f; do
+            case "$f" in .github/workflows/*) continue;; esac
+            if [[ -f "$tmp/$f" || -L "$tmp/$f" ]]; then
+              expected=$(git -C "$tmp/source" rev-parse "HEAD:$f")
+              actual=$(git rev-parse ":$f")
+              test "$expected" = "$actual"
+            fi
+          done
+          git config user.name "TrillionAI Reference Import"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Import verified Ollama source snapshot $rev"
+          git push origin HEAD:main
