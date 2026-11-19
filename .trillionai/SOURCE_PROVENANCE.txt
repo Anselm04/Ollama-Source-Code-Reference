@@ -1,0 +1,4 @@
+Upstream: https://github.com/ollama/ollama
+Revision: 42ac2c0c1e132c0b4f0d9cfcd4e7950f0c5470bc
+Original tree: ff0035d749019c82c6e6730ddcc1127c9895aeb4
+Excluded: upstream GitHub workflows; external submodule contents and LFS payloads not fetched.
