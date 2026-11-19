@@ -1,0 +1,22 @@
+{
+  "upstream_tracked_entries": 1660,
+  "upstream_blob_files": 1660,
+  "imported_tracked_entries": 1655,
+  "expected_source_files": 1653,
+  "verified_source_files": 1653,
+  "excluded_paths": [
+    ".github/workflows/latest.yaml",
+    ".github/workflows/release.yaml",
+    ".github/workflows/test-install.yaml",
+    ".github/workflows/test-llamacpp-update.yaml",
+    ".github/workflows/test-tokenizer.yaml",
+    ".github/workflows/test-xgrammar.yaml",
+    ".github/workflows/test.yaml"
+  ],
+  "missing_paths": [],
+  "mismatched_paths": [],
+  "extra_paths": [
+    ".github/workflows/import-reference.yml",
+    ".trillionai/SOURCE_PROVENANCE.txt"
+  ]
+}
